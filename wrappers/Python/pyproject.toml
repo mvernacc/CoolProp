@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools", "cython"]
+build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel]
+# TODO do we need to install cmake and p7zip before building? Not sure if these are actually needed
+# for cython build on linux.
+# If so, install with: `before-all = "yum install ..."`
+# See https://cibuildwheel.readthedocs.io/en/stable/options/#before-all
+build = "cp39-manylinux_x86_64"  # For testing, only build python 3.9
