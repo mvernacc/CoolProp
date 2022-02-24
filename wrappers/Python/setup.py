@@ -289,6 +289,7 @@ if __name__ == '__main__':
             generate_headers.generate()
             del generate_headers
 
+        print("PYTHONPATH: " + os.environ.get("PYTHONPATH"))
         import generate_constants_module
         generate_constants_module.generate()
         del generate_constants_module

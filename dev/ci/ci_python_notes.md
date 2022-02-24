@@ -38,3 +38,57 @@ The command `cibuildwheel --platform linux` fails with the following error:
 I believe this happens because `cibuildwheel` only copies the python project directory (where `pyproject.toml` is, in this case `CoolProp/wrappers/Python/`) into its Docker container. This works for the typical python directory structure, but the build for CoolProp requires stuff in parent directories: `CoolProp/CMakeLists.txt`, C++ source in `CoolProp/src/`, other C++ libraries in `CoolProp/externals`.
 
 [cibuildwheels PR 295](https://github.com/pypa/cibuildwheel/pull/295) seems related, but I have not yet read it in detail.
+
+Solution: run `cibuildwheel` from repo root directory and use `package_dir` argument [[docs](https://cibuildwheel.readthedocs.io/en/stable/options/#command-line)].
+
+
+### generate_constants_module import error
+When `cibuildwheel` executes `python -m pip wheel /project/wrappers/Python --wheel-dir=/tmp/cibuildwheel/built_wheel --no-deps`, it fails with this error:
+
+```
+File "setup.py", line 293, in <module>
+      import generate_constants_module
+  ModuleNotFoundError: No module named 'generate_constants_module'
+```
+
+`generate_constants_module.py` is in `wrappers/Python/`, alongside `setup.py`. Its role is to parse the `DataStructures.h` and `Configuration.h` headers and generate Cython files (`.pxd`, `.pyx`) for them. It is used in two places:
+
+1. Imported and called in `setup.py` (cause of the above error), to generate the cython files, before `setup.py` calls `cythonize`.
+2. Called with `subprocess ` in ` prepare_pypi.py`. `prepare_pypi.py`, in turn, is invoked by cmake if the `COOLPROP_PYTHON_PYPI` flag is set. The only place this flag is mentioned is in the `python_source_slave` in the old buildbot's `master.cfg`.
+
+
+#### Attempted solution with PYTHONPATH
+Adding `wrappers/Python/` to the `PYTHONPATH` should enable the failing import. I tried adding the following to `pyproject.toml`:
+
+```toml
+[tool.cibuildwheel]
+...
+before-build = "echo $PYTHONPATH"
+
+[tool.cibuildwheel.environment]
+PYTHONPATH = "/project/wrappers/Python:$PYTHONPATH"
+```
+
+And I added the following to `setup.py`, just before the failing `import generate_constants_module`:
+
+```python
+print("PYTHONPATH: " + os.environ.get("PYTHONPATH"))
+```
+
+The import error still occurs! The inspections of `PYTHONPATH` give the following output:
+```
+Running before_build...
+
+    + sh -c 'echo $PYTHONPATH'
+/project/wrappers/Python:
+
+Building wheel...
+[...]
+    + python -m pip wheel /project/wrappers/Python --wheel-dir=/tmp/cibuildwheel/built_wheel --no-deps
+[...]
+  PYTHONPATH: /tmp/pip-build-env-y0wnharz/site
+[...]
+  ModuleNotFoundError: No module named 'generate_constants_module'
+```
+
+It seems `cibuildwheel` runs the `pip wheel` command in a different environment, that does not have the same `PYTHONPATH` as configured by `[tool.cibuildwheel.environment]`?
