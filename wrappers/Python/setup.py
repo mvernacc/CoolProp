@@ -119,6 +119,8 @@ if __name__ == '__main__':
             cmake_bitness = sys.argv.pop(i)
         else:
             cmake_bitness = ''
+    cmake_compiler = "default"
+    cmake_bitness = "64"
 
     USING_CMAKE = cmake_compiler or cmake_bitness
 
@@ -289,7 +291,7 @@ if __name__ == '__main__':
             generate_headers.generate()
             del generate_headers
 
-        print("PYTHONPATH: " + os.environ.get("PYTHONPATH"))
+        # print("PYTHONPATH: " + os.environ.get("PYTHONPATH"))
         import generate_constants_module
         generate_constants_module.generate()
         del generate_constants_module

@@ -92,3 +92,71 @@ Building wheel...
 ```
 
 It seems `cibuildwheel` runs the `pip wheel` command in a different environment, that does not have the same `PYTHONPATH` as configured by `[tool.cibuildwheel.environment]`?
+
+#### Attempted solution: consolidating setup.py
+The relative import in `setup.py` is atypical and is causing problems. Can we get rid of it?
+
+It seems `generate_constants_module` currently separate so that it can also be called when making a source distribution for PyPI.
+
+Miscellaneous articles on how to distribute source for cython projects:
+ - https://stackoverflow.com/questions/4505747/how-should-i-structure-a-python-package-that-contains-cython-code
+ - [Distributing Cython modules](http://docs.cython.org/en/latest/src/userguide/source_files_and_compilation.html#distributing-cython-modules)
+
+"Distributing Cython modules" indicates standard practice is to do this all with options within setup.py, and not use another script (but id does not address auto-generated .pxd files).
+
+TODO
+
+
+## Trying to learn what jmarrec did
+
+Julien Marrec submitted a [PR](https://github.com/CoolProp/CoolProp/pull/2097) to implement cibuildwheels for CoolProp. I want to learn what he did differently to avoid the pitfalls I've been having.
+
+I needed to set the `cmake_compiler` or `cmake_bitness` variables in `setup.py` to make `USING_CMAKE` true, in order for cmake to be called. Julien did this by modifying `setup.py` to read these from environment variables. For now I'm just hardcoding them in.
+
+### Error with find_module
+
+cmake calls a python 2.7 script, `dev/generate_headers.py`, which parses some JSON files and generated headers for the C++ library. In Julien's branch, this runs properly, producing the output:
+```
+  /usr/bin/python2.7 /project/dev/generate_headers.py
+  git version 2.34.1
+  version written to file: /project/include/cpversion.h
+  version written to hidden file: /project/.version for use in builders that don't use git repo
+  git is accessible at the command line
+  git revision is 6bec2d9ec7322ecc0c3cc75ac5fc156e4ce3bff0
+  *** Generating gitrevision.h ***
+  /project/include/gitrevision.h written to file
+  /project/include/all_fluids_JSON.h written to file
+  /project/include/all_incompressibles_JSON.h written to file
+  /project/include/mixture_departure_functions_JSON.h written to file
+  /project/include/mixture_binary_pairs_JSON.h written to file
+  /project/include/predefined_mixtures_JSON.h written to file
+  /project/include/all_cubics_JSON.h written to file
+  /project/include/cubic_fluids_schema_JSON.h written to file
+  /project/include/pcsaft_fluids_schema_JSON.h written to file
+  /project/include/all_pcsaft_JSON.h written to file
+  /project/include/mixture_binary_pairs_pcsaft_JSON.h written to file
+```
+
+On my branch, this step in cmake fails:
+```
+  /usr/bin/python2.7 /project/dev/generate_headers.py
+  AttributeError: find_module
+  gmake[2]: *** [CMakeFiles/generate_headers] Error 1
+```
+`find_module` is part of the `imp` [import internals](https://docs.python.org/2.7/library/imp.html#imp.find_module) module in python 2.7. It never appears in the CoolProp source.
+
+I noticed that the pip command which triggers cmake is different on my branch vs on Julien's.
+
+Mine:
+```
+Running command /opt/python/cp39-cp39/bin/python /opt/python/cp39-cp39/lib/python3.9/site-packages/pip/_vendor/pep517/in_process/_in_process.py get_requires_for_build_wheel /tmp/tmppi_nuiqu
+```
+
+Julien's:
+```
+Running command python setup.py egg_info
+```
+
+This is because my branch has a pyproject.toml file and Julien's does not. I removed my pyproject.toml file (and instead gave the same options for cibuildwheel via env vars). This caused the `find_module` error to not happen on my branch. I have no idea why.
+
+Without pyproject.toml, cibuildwheels succeeds in building the wheel for cp39-manylinux_x86_64 on my branch.
