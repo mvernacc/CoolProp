@@ -113,7 +113,7 @@ Julien Marrec submitted a [PR](https://github.com/CoolProp/CoolProp/pull/2097) t
 
 I needed to set the `cmake_compiler` or `cmake_bitness` variables in `setup.py` to make `USING_CMAKE` true, in order for cmake to be called. Julien did this by modifying `setup.py` to read these from environment variables. For now I'm just hardcoding them in.
 
-### Error with find_module
+### Error with `find_module`
 
 cmake calls a python 2.7 script, `dev/generate_headers.py`, which parses some JSON files and generated headers for the C++ library. In Julien's branch, this runs properly, producing the output:
 ```
@@ -160,3 +160,53 @@ Running command python setup.py egg_info
 This is because my branch has a pyproject.toml file and Julien's does not. I removed my pyproject.toml file (and instead gave the same options for cibuildwheel via env vars). This caused the `find_module` error to not happen on my branch. I have no idea why.
 
 Without pyproject.toml, cibuildwheels succeeds in building the wheel for cp39-manylinux_x86_64 on my branch.
+
+
+#### Why does `find_module` error occur when pyproject.toml is present?
+
+As an experiment to learn more about the error, I tried a trivial `generate_headers.py`.
+On my branch, with pyproject.toml, I replaced the contents of `generate_headers.py` with `print "hello"`. I then ran `cibuildwheel --platform linux ./wrappers/Python/`. The command:
+```
+ Running command /opt/python/cp39-cp39/bin/python /tmp/pip-standalone-pip-b3tm1dq1/__env_pip__.zip/pip install --ignore-installed --no-user --prefix /tmp/pip-build-env-x1d6qlpl/overlay --no-warn-script-location --no-binary :none: --only-binary :none: -i https://pypi.org/simple -- setuptools cython
+ ```
+triggered cmake, and as before cmake failed with
+```
+  /usr/bin/python2.7 /project/dev/generate_headers.py
+  AttributeError: find_module
+  gmake[2]: *** [CMakeFiles/generate_headers] Error 1
+```
+
+This indicates that the error occurs from cmake trying to find or load `generate_headers.py`, not from executing an import statement within `generate_headers.py`.
+
+#### Why is python 2.7 used?
+In CMakeLists.txt, cmake is instructed to look for a python 2.7 interpreter, and then fall back on python3 if it cannot find python2:
+```
+set(Python_ADDITIONAL_VERSIONS 2.7 2.6 2.5 2.4)
+find_package (PythonInterp 2.7)
+if (NOT PYTHON_EXECUTABLE)
+  MESSAGE(STATUS "Looking for Python")
+  find_package (Python COMPONENTS Interpreter)
+endif()
+if (NOT PYTHON_EXECUTABLE)
+  MESSAGE(STATUS "Looking for Python2")
+  find_package (Python2 COMPONENTS Interpreter)
+  if(Python2_Interpreter_FOUND)
+    set(PYTHON_EXECUTABLE ${Python2_EXECUTABLE})
+  endif()
+endif()
+if (NOT PYTHON_EXECUTABLE)
+  MESSAGE(STATUS "Looking for Python3")
+  find_package (Python3 COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+  endif()
+endif()
+if (NOT PYTHON_EXECUTABLE)
+  MESSAGE(WARNING "Could not find Python, be prepared for errors.")
+endif()
+```
+
+On both my branch and Julien's branch, cmake finds the system python 2.7 of the manylinux2014 image:
+```
+-- Found PythonInterp: /usr/bin/python2.7 (Required is at least version "2.7")
+```
